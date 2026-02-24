@@ -1,0 +1,164 @@
+# database.py
+import sqlite3
+
+connection = sqlite3.connect("expense.db")
+
+cursor = connection.cursor()
+
+cursor.execute("create table  if not exists Exp(Id integer, Category varchar(25), Name varchar(20), Amount integer)")  
+
+cursor.execute("insert into Exp values(1, 'Food', 'Pizza', '1500')")
+cursor.execute("insert into Exp values(2, 'Food', 'Cake', '300')")
+cursor.execute("insert into Exp values(3, 'Bill', 'Electricity', '1000')")
+cursor.execute("insert into Exp values(4, 'Clothes', 'Jeans', '500')")
+cursor.execute("insert into Exp values(5, 'Clothes', 'Shirt', '2000')")
+
+cursor.execute("create table if not exists user(Id int, Name varchar(20), username varchar(20), password varchar(20))")
+
+cursor.execute("insert into user values(101,'admin','abc', '123' )")
+cursor.execute("insert into user values(102,'B','bcd', '345' )")
+cursor.execute("insert into user values(103,'C','cde', '567' )")
+cursor.execute("insert into user values(104,'D','def', '789' )")
+cursor.execute("insert into user values(105,'E','efg', '901' )")
+connection.commit()
+print("Data inserted successfully")
+
+print("Expense Table:")
+expense_rows = cursor.execute("select Id, Category, Name, Amount from Exp ").fetchall()
+for row in expense_rows:
+    print(row)
+
+print("\nUsers Table:")
+user_rows = cursor.execute("select id, Name, username, password from user").fetchall()
+for row in user_rows:
+    print(row)
+    
+connection.close()
+
+# filework.py
+from tkinter import *
+import sqlite3
+
+def calculate_expense():
+
+    win = Toplevel()
+    win.title("Calculate Expense")
+    win.geometry("500x500")
+    win.configure(bg="#F6C45C")
+
+    Label(win,text="Enter Your Income",bg="#F6C45C",font=("Arial", 14)).pack(pady=10)
+
+    income_entry = Entry(win)
+    income_entry.pack()
+
+    result = Label(win, bg="#F6C45C")
+    result.pack(pady=15)
+
+    def calculate():
+
+        conn = sqlite3.connect("expense.db")
+        cursor = conn.cursor()
+
+    
+        total = cursor.execute("select sum(Amount) from Exp").fetchone()[0]
+
+        conn.close()
+
+        if total is None:
+            total = 0
+
+        income = int(income_entry.get())
+
+        balance = income - int(total)
+
+        result.config(text=f"Total Expense: {total}\nRemaining Balance: {balance}",
+                      fg="blue")
+
+    Button(win,
+           text="Calculate",
+           bg="#FFAFEB",
+           command=calculate).pack(pady=10)
+
+def show_expense():
+
+    win = Toplevel()
+    win.title("Expenses")
+    win.geometry("500x400")
+    win.configure(bg="#FFAFEB")
+
+    conn = sqlite3.connect("expense.db")
+    cursor = conn.cursor()
+
+    rows = cursor.execute("select * from Exp").fetchall()
+
+    conn.close()
+
+    Label(win,
+          text="All Expenses",
+          font=("Arial", 16),
+          bg="#FFAFEB").pack(pady=10)
+
+    for row in rows:
+        Label(win,
+              text=row,
+              bg="#FFAFEB").pack()
+
+# homepage.py
+from tkinter import *
+import filework
+
+def open_homepage():
+
+    home = Toplevel()
+    home.title("Expense Diary")
+    home.geometry("500x500")
+    home.configure(bg="#FFAFEB")
+
+    Label(home, text="Expense Homepage",font=("Arial", 18),bg="#FFAFEB").pack(pady=20)
+
+    Button(home,text="Calculate Expense", bg="#F6C45C", command=filework.calculate_expense).pack(pady=10)
+
+    Button(home,text="Show Expense",bg="#F6C45C",command=filework.show_expense).pack(pady=10)
+
+# main.py
+from tkinter import *
+import sqlite3
+import homepage
+
+root = Tk()
+root.title("Login Page")
+root.geometry("550x550")
+root.configure(bg="#F6C45C")
+
+Label(root, text="Login Page", font=("Arial", 18), bg="#F6C45C").pack(pady=20)
+
+Label(root, text="Username", bg="#F6C45C").pack()
+username = Entry(root)
+username.pack()
+
+Label(root, text="Password", bg="#F6C45C").pack()
+password = Entry(root, show="*")
+password.pack()
+
+result = Label(root, bg="#F6C45C")
+result.pack(pady=10)
+
+def login():
+    conn = sqlite3.connect("expense.db")
+    cursor = conn.cursor()
+
+    cursor.execute("select * from user where username=? and password=?",(username.get(), password.get()))
+
+    data = cursor.fetchone()
+
+    if data:
+        result.config(text="Login Successful", fg="green")
+        homepage.open_homepage()
+    else:
+        result.config(text="Invalid Login", fg="red")
+
+    conn.close()
+
+Button(root, text="Login", bg="#FFAFEB", command=login).pack(pady=10)
+
+root.mainloop()
