@@ -1,0 +1,157 @@
+# pages/fees.py
+
+import tkinter as tk
+from tkinter import messagebox
+from core.theme import *
+from core import database as db
+from components.widgets import btn, sep, field, dropdown, make_table
+
+
+MONTHS = ["January","February","March","April","May","June",
+          "July","August","September","October","November","December"]
+
+class FeesPage(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=WHITE)
+        self.app = app
+
+    def refresh(self):
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Fee Records", font=FH1, fg=DARK,
+                 bg=WHITE, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+        sep(self)
+
+        # Quick summary
+        fees = self.app.data["fees"]
+        paid   = sum(f.get("amount",0) for f in fees if f["status"]=="Paid")
+        unpaid = sum(f.get("amount",0) for f in fees if f["status"]=="Unpaid")
+        sf = tk.Frame(self, bg=WHITE)
+        sf.pack(fill="x", padx=20, pady=(0,8))
+        for lbl, val, color in [("Total Collected", f"Rs.{paid:,}", GREEN),
+                                  ("Total Pending",   f"Rs.{unpaid:,}", RED)]:
+            card = tk.Frame(sf, bg=WHITE, bd=1, relief="solid", padx=16, pady=8)
+            card.pack(side="left", padx=5)
+            tk.Label(card, text=val, font=("Arial",15,"bold"), fg=color, bg=WHITE).pack()
+            tk.Label(card, text=lbl, font=FS, fg=GRAY, bg=WHITE).pack()
+
+        cols = ("Student Name", "Roll", "Month", "Amount", "Status", "Due Date", "Paid Date")
+        widths = [160, 90, 100, 90, 80, 100, 100]
+        wrap, self.tv = make_table(self, cols, widths, height=13)
+        wrap.pack(fill="both", expand=True, padx=20, pady=(0,8))
+        self._load_table()
+
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(fill="x", padx=20, pady=6)
+        btn(bf, "Add Fee Record",  self._add_form).pack(side="left", padx=4)
+        btn(bf, "Mark as Paid",    self._mark_paid, color=GREEN).pack(side="left", padx=4)
+        btn(bf, "Delete",          self._delete,    color=RED).pack(side="left", padx=4)
+
+    def _load_table(self):
+        for row in self.tv.get_children():
+            self.tv.delete(row)
+        data = self.app.data
+        for f in data["fees"]:
+            stu = db.get_student(data, f.get("student_id",""))
+            self.tv.insert("", "end", iid=f["id"],
+                           values=(stu["name"] if stu else "—",
+                                   stu["roll"] if stu else "—",
+                                   f.get("month",""),
+                                   f"Rs.{f.get('amount',0):,}",
+                                   f["status"],
+                                   f.get("due_date",""),
+                                   f.get("paid_date","")))
+
+    def _mark_paid(self):
+        sel = self.tv.selection()
+        if not sel:
+            messagebox.showwarning("Select","Select a fee record first."); return
+        fid = sel[0]
+        fee = next((f for f in self.app.data["fees"] if f["id"]==fid), None)
+        if fee:
+            fee["status"]    = "Paid"
+            fee["paid_date"] = db.today()
+            db.save(self.app.data)
+            self.refresh()
+
+    def _delete(self):
+        sel = self.tv.selection()
+        if not sel: return
+        if messagebox.askyesno("Confirm","Delete this fee record?"):
+            self.app.data["fees"] = [f for f in self.app.data["fees"] if f["id"] != sel[0]]
+            db.save(self.app.data)
+            self.refresh()
+
+    def _add_form(self):
+        FeeForm(self, self.app)
+
+
+class FeeForm(tk.Toplevel):
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+        self.title("Add Fee Record")
+        self.geometry("380x300")
+        self.configure(bg=WHITE)
+        self.resizable(False, False)
+        self.grab_set()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Add Fee Record", font=FH2, fg=DARK,
+                 bg=WHITE).pack(padx=16, pady=(14,4), anchor="w")
+
+        f = tk.Frame(self, bg=WHITE)
+        f.pack(padx=16, fill="x")
+        f.columnconfigure(1, weight=1)
+        f.columnconfigure(3, weight=1)
+
+        data = self.app.data
+        stu_labels = [f"{s['name']} ({s['roll']})" for s in data["students"]]
+        self._stu_map = {f"{s['name']} ({s['roll']})": s for s in data["students"]}
+
+        self.v_stu    = tk.StringVar(value=stu_labels[0] if stu_labels else "")
+        self.v_month  = tk.StringVar(value="July")
+        self.v_year   = tk.StringVar(value="2024")
+        self.v_amount = tk.StringVar(value="3500")
+        self.v_due    = tk.StringVar(value="2024-07-31")
+        self.v_status = tk.StringVar(value="Unpaid")
+
+        dropdown(f,"Student *",   0, self.v_stu,    stu_labels or ["—"], col=0)
+        dropdown(f,"Month",       1, self.v_month,  MONTHS, col=0)
+        field(f,  "Year",         1, self.v_year,   col=1, width=8)
+        field(f,  "Amount (Rs.)", 2, self.v_amount, col=0)
+        field(f,  "Due Date",     2, self.v_due,    col=1)
+        dropdown(f,"Status",      3, self.v_status, ["Unpaid","Paid"], col=0)
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", pady=8)
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(padx=16, anchor="e")
+        btn(bf, "Cancel", self.destroy, color="#888888").pack(side="left", padx=4)
+        btn(bf, "Save",   self._save).pack(side="left")
+
+    def _save(self):
+        stu = self._stu_map.get(self.v_stu.get())
+        if not stu:
+            messagebox.showerror("Required","Select a student."); return
+        try:
+            amount = int(self.v_amount.get())
+        except ValueError:
+            messagebox.showerror("Invalid","Amount must be a number."); return
+
+        fee = {
+            "id":         db.new_id(),
+            "student_id": stu["id"],
+            "month":      f"{self.v_month.get()} {self.v_year.get()}",
+            "amount":     amount,
+            "status":     self.v_status.get(),
+            "due_date":   self.v_due.get(),
+            "paid_date":  db.today() if self.v_status.get()=="Paid" else "",
+        }
+        self.app.data["fees"].append(fee)
+        db.save(self.app.data)
+        self.destroy()
+        self.master.refresh()
