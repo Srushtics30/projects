@@ -1,0 +1,20 @@
+# core/theme
+
+BG      = "#f5f5f5"
+WHITE   = "#ffffff"
+BORDER  = "#cccccc"
+DARK    = "#333333"
+GRAY    = "#666666"
+LIGHT   = "#eeeeee"
+
+BLUE    = "#2c6fad"
+BLUE_LT = "#3a82c8"
+RED     = "#c0392b"
+GREEN   = "#27ae60"
+ORANGE  = "#e67e22"
+
+FH1  = ("Arial", 18, "bold")
+FH2  = ("Arial", 13, "bold")
+FB   = ("Arial", 11)
+FS   = ("Arial", 9)
+FBD  = ("Arial", 11, "bold")
