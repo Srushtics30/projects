@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+# main.py  —  Hostel Management System (College Project)
+
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+
+import tkinter as tk
+from core import database as db
+from core.theme import *
+from components.sidebar import Sidebar
+from pages.dashboard  import DashboardPage
+from pages.rooms      import RoomsPage
+from pages.students   import StudentsPage
+from pages.fees       import FeesPage
+from pages.complaints import ComplaintsPage
+from pages.reports    import ReportsPage
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Hostel Management System")
+        self.geometry("1100x680")
+        self.minsize(960, 600)
+        self.configure(bg=WHITE)
+
+        self.data = db.load()
+
+        # Layout: sidebar + content
+        self._sidebar = Sidebar(self, on_nav=self._show_page)
+        self._sidebar.pack(side="left", fill="y")
+
+        # Thin line separator
+        tk.Frame(self, bg=BORDER, width=1).pack(side="left", fill="y")
+
+        self._content = tk.Frame(self, bg=WHITE)
+        self._content.pack(side="left", fill="both", expand=True)
+
+        # All pages
+        self._pages = {
+            "dashboard":  DashboardPage(self._content, self),
+            "rooms":      RoomsPage(self._content, self),
+            "students":   StudentsPage(self._content, self),
+            "fees":       FeesPage(self._content, self),
+            "complaints": ComplaintsPage(self._content, self),
+            "reports":    ReportsPage(self._content, self),
+        }
+        for page in self._pages.values():
+            page.place(relwidth=1, relheight=1)
+
+        self._show_page("dashboard")
+
+    def _show_page(self, key):
+        page = self._pages.get(key)
+        if page:
+            self.data = db.load()   # reload fresh from SQLite on every page switch
+            page.refresh()
+            page.lift()
+
+
+if __name__ == "__main__":
+    App().mainloop()
