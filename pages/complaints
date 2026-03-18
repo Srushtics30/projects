@@ -1,0 +1,146 @@
+# pages/complaints.py
+
+import tkinter as tk
+from tkinter import messagebox
+from core.theme import *
+from core import database as db
+from components.widgets import btn, sep, field, dropdown, make_table
+
+
+class ComplaintsPage(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=WHITE)
+        self.app = app
+
+    def refresh(self):
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Complaints", font=FH1, fg=DARK,
+                 bg=WHITE, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+        sep(self)
+
+        cols = ("Student Name", "Roll", "Title", "Date", "Status", "Note")
+        widths = [150, 90, 200, 100, 90, 200]
+        wrap, self.tv = make_table(self, cols, widths, height=16)
+        wrap.pack(fill="both", expand=True, padx=20, pady=(0,8))
+        self._load_table()
+
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(fill="x", padx=20, pady=6)
+        btn(bf, "Add Complaint",  self._add_form).pack(side="left", padx=4)
+        btn(bf, "Mark Resolved",  self._resolve, color=GREEN).pack(side="left", padx=4)
+        btn(bf, "Delete",         self._delete,  color=RED).pack(side="left", padx=4)
+
+    def _load_table(self):
+        for row in self.tv.get_children():
+            self.tv.delete(row)
+        data = self.app.data
+        for c in data["complaints"]:
+            stu = db.get_student(data, c.get("student_id",""))
+            self.tv.insert("", "end", iid=c["id"],
+                           values=(stu["name"] if stu else "—",
+                                   stu["roll"] if stu else "—",
+                                   c.get("title",""),
+                                   c.get("date",""),
+                                   c.get("status",""),
+                                   c.get("note","")))
+
+    def _resolve(self):
+        sel = self.tv.selection()
+        if not sel:
+            messagebox.showwarning("Select","Select a complaint first."); return
+        cid = sel[0]
+        c = next((x for x in self.app.data["complaints"] if x["id"]==cid), None)
+        if c:
+            # Ask for resolution note
+            win = tk.Toplevel(self)
+            win.title("Resolve Complaint")
+            win.geometry("340x160")
+            win.configure(bg=WHITE)
+            win.grab_set()
+            tk.Label(win, text="Resolution Note:", font=FB, fg=DARK,
+                     bg=WHITE).pack(padx=16, pady=(14,4), anchor="w")
+            note_var = tk.StringVar()
+            tk.Entry(win, textvariable=note_var, font=FB, relief="solid",
+                     bd=1, width=36).pack(padx=16, pady=4)
+            def do_resolve():
+                c["status"] = "Resolved"
+                c["note"]   = note_var.get().strip()
+                db.save(self.app.data)
+                win.destroy()
+                self._load_table()
+            bf2 = tk.Frame(win, bg=WHITE)
+            bf2.pack(pady=10)
+            btn(bf2, "Cancel",  win.destroy, color="#888888").pack(side="left", padx=4)
+            btn(bf2, "Resolve", do_resolve,  color=GREEN).pack(side="left")
+
+    def _delete(self):
+        sel = self.tv.selection()
+        if not sel: return
+        if messagebox.askyesno("Confirm","Delete this complaint?"):
+            self.app.data["complaints"] = [c for c in self.app.data["complaints"] if c["id"] != sel[0]]
+            db.save(self.app.data)
+            self._load_table()
+
+    def _add_form(self):
+        ComplaintForm(self, self.app)
+
+
+class ComplaintForm(tk.Toplevel):
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+        self.title("Add Complaint")
+        self.geometry("400x260")
+        self.configure(bg=WHITE)
+        self.resizable(False, False)
+        self.grab_set()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Add Complaint", font=FH2, fg=DARK,
+                 bg=WHITE).pack(padx=16, pady=(14,4), anchor="w")
+
+        f = tk.Frame(self, bg=WHITE)
+        f.pack(padx=16, fill="x")
+        f.columnconfigure(1, weight=1)
+        f.columnconfigure(3, weight=1)
+
+        data = self.app.data
+        stu_labels = [f"{s['name']} ({s['roll']})" for s in data["students"]]
+        self._stu_map = {f"{s['name']} ({s['roll']})": s for s in data["students"]}
+
+        self.v_stu   = tk.StringVar(value=stu_labels[0] if stu_labels else "")
+        self.v_title = tk.StringVar()
+        self.v_date  = tk.StringVar(value=db.today())
+
+        dropdown(f,"Student *", 0, self.v_stu,   stu_labels or ["—"], col=0)
+        field(f,  "Title *",    1, self.v_title, col=0)
+        field(f,  "Date",       1, self.v_date,  col=1, width=12)
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", pady=8)
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(padx=16, anchor="e")
+        btn(bf, "Cancel", self.destroy, color="#888888").pack(side="left", padx=4)
+        btn(bf, "Submit", self._save).pack(side="left")
+
+    def _save(self):
+        stu = self._stu_map.get(self.v_stu.get())
+        title = self.v_title.get().strip()
+        if not stu or not title:
+            messagebox.showerror("Required","Student and title are required."); return
+        c = {
+            "id":         db.new_id(),
+            "student_id": stu["id"],
+            "title":      title,
+            "date":       self.v_date.get(),
+            "status":     "Pending",
+            "note":       "",
+        }
+        self.app.data["complaints"].append(c)
+        db.save(self.app.data)
+        self.destroy()
+        self.master.refresh()
