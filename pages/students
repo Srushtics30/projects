@@ -1,0 +1,173 @@
+
+# pages/students.py
+
+import tkinter as tk
+from tkinter import messagebox
+from core.theme import *
+from core import database as db
+from components.widgets import btn, sep, field, dropdown, make_table
+
+
+class StudentsPage(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=WHITE)
+        self.app = app
+
+    def refresh(self):
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Student Records", font=FH1, fg=DARK,
+                 bg=WHITE, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+        sep(self)
+
+        cols = ("Name", "Roll No", "Course", "Year", "Room", "Phone", "Guardian", "Joined")
+        widths = [150, 90, 120, 50, 70, 110, 130, 90]
+        wrap, self.tv = make_table(self, cols, widths, height=14)
+        wrap.pack(fill="both", expand=True, padx=20, pady=(0, 8))
+        self._load_table()
+
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(fill="x", padx=20, pady=6)
+        btn(bf, "Admit Student",  self._add_form).pack(side="left", padx=4)
+        btn(bf, "Edit",           self._edit_form, color="#555555").pack(side="left", padx=4)
+        btn(bf, "Remove Student", self._delete,    color=RED).pack(side="left", padx=4)
+
+    def _load_table(self):
+        for row in self.tv.get_children():
+            self.tv.delete(row)
+        for s in self.app.data["students"]:
+            room = db.get_room(self.app.data, s.get("room_id", ""))
+            self.tv.insert("", "end", iid=s["id"],
+                           values=(s["name"], s["roll"], s.get("course", ""),
+                                   s.get("year", ""), room["number"] if room else "—",
+                                   s.get("phone", ""), s.get("guardian", ""),
+                                   s.get("join_date", "")))
+
+    def _add_form(self):
+        StudentForm(self, self.app, existing=None)
+
+    def _edit_form(self):
+        sel = self.tv.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Please select a student first."); return
+        stu = db.get_student(self.app.data, sel[0])
+        StudentForm(self, self.app, existing=stu)
+
+    def _delete(self):
+        sel = self.tv.selection()
+        if not sel:
+            messagebox.showwarning("Select", "Please select a student first."); return
+        s = db.get_student(self.app.data, sel[0])
+        if messagebox.askyesno("Confirm", f"Remove student '{s['name']}'?"):
+            # If they were the last occupant, free up the room
+            room = db.get_room(self.app.data, s.get("room_id", ""))
+            if room:
+                remaining = len(db.room_occupants(self.app.data, room["id"])) - 1
+                if remaining <= 0:
+                    room["status"] = "Available"
+            self.app.data["students"] = [x for x in self.app.data["students"] if x["id"] != s["id"]]
+            db.save(self.app.data)
+            self._load_table()
+
+
+class StudentForm(tk.Toplevel):
+    def __init__(self, parent, app, existing=None):
+        super().__init__(parent)
+        self.app = app
+        self.existing = existing
+        self.title("Edit Student" if existing else "Admit Student")
+        self.geometry("460x400")
+        self.configure(bg=WHITE)
+        self.resizable(False, False)
+        self.grab_set()
+        self._build()
+
+    def _build(self):
+        s = self.existing or {}
+        tk.Label(self, text="Edit Student" if self.existing else "Admit New Student",
+                 font=FH2, fg=DARK, bg=WHITE).pack(padx=16, pady=(14, 4), anchor="w")
+
+        f = tk.Frame(self, bg=WHITE)
+        f.pack(padx=16, fill="x")
+        f.columnconfigure(1, weight=1)
+        f.columnconfigure(3, weight=1)
+
+        self.v_name     = tk.StringVar(value=s.get("name", ""))
+        self.v_roll     = tk.StringVar(value=s.get("roll", ""))
+        self.v_course   = tk.StringVar(value=s.get("course", ""))
+        self.v_year     = tk.StringVar(value=str(s.get("year", "1")))
+        self.v_phone    = tk.StringVar(value=s.get("phone", ""))
+        self.v_email    = tk.StringVar(value=s.get("email", ""))
+        self.v_guardian = tk.StringVar(value=s.get("guardian", ""))
+        self.v_dob      = tk.StringVar(value=s.get("dob", ""))
+
+        # Available rooms: show Available ones + the student's current room
+        data = self.app.data
+        avail = [r for r in data["rooms"]
+                 if r["status"] == "Available" or r["id"] == s.get("room_id")]
+        room_labels = [f"Room {r['number']} ({r['type']})" for r in avail]
+        self._room_map = {f"Room {r['number']} ({r['type']})": r for r in avail}
+
+        current_room = db.get_room(data, s.get("room_id", ""))
+        if current_room:
+            current_label = f"Room {current_room['number']} ({current_room['type']})"
+        else:
+            current_label = room_labels[0] if room_labels else ""
+        self.v_room = tk.StringVar(value=current_label)
+
+        field(f,    "Full Name *",    0, self.v_name,     col=0)
+        field(f,    "Roll No *",      0, self.v_roll,     col=1)
+        field(f,    "Course",         1, self.v_course,   col=0)
+        dropdown(f, "Year",           1, self.v_year,     ["1", "2", "3", "4"], col=1)
+        dropdown(f, "Assign Room",    2, self.v_room,     room_labels or ["No rooms available"], col=0)
+        field(f,    "Phone",          2, self.v_phone,    col=1)
+        field(f,    "Email",          3, self.v_email,    col=0)
+        field(f,    "Guardian",       3, self.v_guardian, col=1)
+        field(f,    "Date of Birth",  4, self.v_dob,      col=0)
+
+        tk.Frame(self, bg=BORDER, height=1).pack(fill="x", pady=8)
+        bf = tk.Frame(self, bg=WHITE)
+        bf.pack(padx=16, anchor="e")
+        btn(bf, "Cancel", self.destroy, color="#888888").pack(side="left", padx=4)
+        btn(bf, "Save",   self._save).pack(side="left")
+
+    def _save(self):
+        name = self.v_name.get().strip()
+        roll = self.v_roll.get().strip()
+        if not name or not roll:
+            messagebox.showerror("Required", "Name and Roll No are required."); return
+
+        room = self._room_map.get(self.v_room.get())
+        if not room:
+            messagebox.showerror("Room", "Please select a valid room."); return
+
+        if self.existing:
+            s = self.existing
+        else:
+            s = {"id": db.new_id()}
+            self.app.data["students"].append(s)
+
+        s["name"]      = name
+        s["roll"]      = roll
+        s["course"]    = self.v_course.get()
+        s["year"]      = self.v_year.get()
+        s["room_id"]   = room["id"]
+        s["phone"]     = self.v_phone.get()
+        s["email"]     = self.v_email.get()
+        s["guardian"]  = self.v_guardian.get()
+        s["dob"]       = self.v_dob.get()
+        s["join_date"] = s.get("join_date") or db.today()
+
+        # Update room status AFTER student is in the list
+        occ = len(db.room_occupants(self.app.data, room["id"]))
+        if occ >= room["capacity"]:
+            room["status"] = "Occupied"
+        else:
+            room["status"] = "Available"
+
+        db.save(self.app.data)
+        self.destroy()
+        self.master.refresh()
