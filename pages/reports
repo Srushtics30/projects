@@ -1,0 +1,129 @@
+# pages/reports.py
+
+import tkinter as tk
+import csv
+from tkinter import filedialog, messagebox
+from core.theme import *
+from core import database as db
+from components.widgets import btn, sep
+
+
+class ReportsPage(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=WHITE)
+        self.app = app
+
+    def refresh(self):
+        for w in self.winfo_children():
+            w.destroy()
+        self._build()
+
+    def _build(self):
+        tk.Label(self, text="Reports", font=FH1, fg=DARK,
+                 bg=WHITE, anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+        sep(self)
+
+        data = self.app.data
+        rooms      = data["rooms"]
+        students   = data["students"]
+        fees       = data["fees"]
+        comps      = data["complaints"]
+
+        # ── Room summary ──
+        self._section("Room Summary")
+        status_counts = {}
+        for r in rooms:
+            s = r["status"]
+            status_counts[s] = status_counts.get(s, 0) + 1
+
+        rt = tk.Frame(self, bg=WHITE, bd=1, relief="solid")
+        rt.pack(fill="x", padx=20, pady=6)
+        for col, h in enumerate(["Status", "Count"]):
+            tk.Label(rt, text=h, font=FBD, fg=DARK, bg=LIGHT,
+                     width=20, anchor="w", padx=8, pady=4).grid(row=0, column=col, sticky="ew", padx=1)
+        for ri, (status, cnt) in enumerate(status_counts.items(), 1):
+            bg = WHITE if ri % 2 == 0 else "#fafafa"
+            tk.Label(rt, text=status, font=FB, fg=DARK, bg=bg,
+                     width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=0, sticky="ew", padx=1)
+            tk.Label(rt, text=str(cnt), font=FB, fg=BLUE, bg=bg,
+                     width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=1, sticky="ew", padx=1)
+
+        # ── Fee summary ──
+        self._section("Fee Summary")
+        paid_amt   = sum(f.get("amount", 0) for f in fees if f["status"] == "Paid")
+        unpaid_amt = sum(f.get("amount", 0) for f in fees if f["status"] == "Unpaid")
+        paid_cnt   = sum(1 for f in fees if f["status"] == "Paid")
+        unpaid_cnt = sum(1 for f in fees if f["status"] == "Unpaid")
+
+        ft = tk.Frame(self, bg=WHITE, bd=1, relief="solid")
+        ft.pack(fill="x", padx=20, pady=6)
+        for col, h in enumerate(["Category", "Records", "Amount"]):
+            tk.Label(ft, text=h, font=FBD, fg=DARK, bg=LIGHT,
+                     width=20, anchor="w", padx=8, pady=4).grid(row=0, column=col, sticky="ew", padx=1)
+        for ri, (lbl, cnt, amt, color) in enumerate([
+            ("Paid",   paid_cnt,   f"Rs.{paid_amt:,}",   GREEN),
+            ("Unpaid", unpaid_cnt, f"Rs.{unpaid_amt:,}", RED),
+        ], 1):
+            bg = WHITE if ri % 2 == 0 else "#fafafa"
+            tk.Label(ft, text=lbl,        font=FB,  fg=DARK,  bg=bg, width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=0, sticky="ew", padx=1)
+            tk.Label(ft, text=str(cnt),   font=FB,  fg=DARK,  bg=bg, width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=1, sticky="ew", padx=1)
+            tk.Label(ft, text=amt,        font=FBD, fg=color, bg=bg, width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=2, sticky="ew", padx=1)
+
+        # ── Complaint summary ──
+        self._section("Complaint Summary")
+        comp_counts = {}
+        for c in comps:
+            comp_counts[c["status"]] = comp_counts.get(c["status"], 0) + 1
+
+        ct = tk.Frame(self, bg=WHITE, bd=1, relief="solid")
+        ct.pack(fill="x", padx=20, pady=6)
+        for col, h in enumerate(["Status", "Count"]):
+            tk.Label(ct, text=h, font=FBD, fg=DARK, bg=LIGHT,
+                     width=20, anchor="w", padx=8, pady=4).grid(row=0, column=col, sticky="ew", padx=1)
+        for ri, (status, cnt) in enumerate(comp_counts.items(), 1):
+            bg = WHITE if ri % 2 == 0 else "#fafafa"
+            color = ORANGE if status == "Pending" else GREEN
+            tk.Label(ct, text=status,  font=FB,  fg=DARK,  bg=bg, width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=0, sticky="ew", padx=1)
+            tk.Label(ct, text=str(cnt),font=FBD, fg=color, bg=bg, width=20, anchor="w", padx=8, pady=5).grid(row=ri, column=1, sticky="ew", padx=1)
+
+        sep(self)
+
+        # ── Export ──
+        self._section("Export Data")
+        ef = tk.Frame(self, bg=WHITE)
+        ef.pack(fill="x", padx=20, pady=8)
+        btn(ef, "Export Students (CSV)",   lambda: self._export("students"), BLUE).pack(side="left", padx=4)
+        btn(ef, "Export Fee Report (CSV)", lambda: self._export("fees"),     BLUE).pack(side="left", padx=4)
+
+    def _section(self, title):
+        tk.Label(self, text=title, font=FBD, fg=DARK, bg=WHITE,
+                 anchor="w").pack(fill="x", padx=20, pady=(10, 0))
+
+    def _export(self, kind):
+        path = filedialog.asksaveasfilename(defaultextension=".csv",
+                                             filetypes=[("CSV", "*.csv")])
+        if not path:
+            return
+        data = self.app.data
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if kind == "students":
+                w.writerow(["Name", "Roll", "Course", "Year", "Room",
+                             "Phone", "Email", "Guardian", "Join Date"])
+                for s in data["students"]:
+                    room = db.get_room(data, s.get("room_id", ""))
+                    w.writerow([s["name"], s["roll"], s.get("course", ""),
+                                s.get("year", ""), room["number"] if room else "",
+                                s.get("phone", ""), s.get("email", ""),
+                                s.get("guardian", ""), s.get("join_date", "")])
+            elif kind == "fees":
+                w.writerow(["Student", "Roll", "Month", "Amount",
+                             "Status", "Due Date", "Paid Date"])
+                for fee in data["fees"]:
+                    stu = db.get_student(data, fee.get("student_id", ""))
+                    w.writerow([stu["name"] if stu else "",
+                                stu["roll"] if stu else "",
+                                fee.get("month", ""), fee.get("amount", ""),
+                                fee.get("status", ""), fee.get("due_date", ""),
+                                fee.get("paid_date", "")])
+        messagebox.showinfo("Done", f"File saved to:\n{path}")
