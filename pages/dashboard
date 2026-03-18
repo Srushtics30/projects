@@ -1,0 +1,103 @@
+# pages/dashboard.py
+
+import tkinter as tk
+from core.theme import *
+from core import database as db
+from components.widgets import sep
+
+
+class DashboardPage(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=WHITE)
+        self.app = app
+
+    def refresh(self):
+        for w in self.winfo_children():
+            w.destroy()
+
+        d = self.app.data
+
+        # Page title
+        tk.Label(self, text="Dashboard", font=FH1, fg=DARK, bg=WHITE,
+                 anchor="w").pack(fill="x", padx=20, pady=(18, 2))
+        tk.Label(self, text="Welcome to Hostel Management System",
+                 font=FS, fg=GRAY, bg=WHITE, anchor="w").pack(fill="x", padx=20)
+        sep(self)
+
+        # Summary boxes
+        rooms    = d["rooms"]
+        students = d["students"]
+        fees     = d["fees"]
+        comps    = d["complaints"]
+
+        total_rooms  = len(rooms)
+        avail_rooms  = sum(1 for r in rooms if r["status"] == "Available")
+        total_stud   = len(students)
+        unpaid_fees  = sum(1 for f in fees if f["status"] == "Unpaid")
+        open_comp    = sum(1 for c in comps if c["status"] == "Pending")
+
+        boxes_frame = tk.Frame(self, bg=WHITE)
+        boxes_frame.pack(fill="x", padx=20, pady=8)
+
+        box_data = [
+            ("Total Rooms",     total_rooms,  BLUE),
+            ("Available Rooms", avail_rooms,  GREEN),
+            ("Total Students",  total_stud,   "#8e44ad"),
+            ("Unpaid Fees",     unpaid_fees,  ORANGE),
+            ("Open Complaints", open_comp,    RED),
+        ]
+        for i, (lbl, val, color) in enumerate(box_data):
+            f = tk.Frame(boxes_frame, bg=WHITE, bd=1, relief="solid",
+                         padx=18, pady=14)
+            f.grid(row=0, column=i, padx=5, sticky="ew")
+            boxes_frame.columnconfigure(i, weight=1)
+            tk.Label(f, text=str(val), font=("Arial", 24, "bold"),
+                     fg=color, bg=WHITE).pack()
+            tk.Label(f, text=lbl, font=FS, fg=GRAY, bg=WHITE).pack()
+
+        sep(self)
+
+        # Two columns
+        cols = tk.Frame(self, bg=WHITE)
+        cols.pack(fill="both", expand=True, padx=20, pady=4)
+        cols.columnconfigure(0, weight=1)
+        cols.columnconfigure(1, weight=1)
+
+        # Left: Student list
+        lf = tk.Frame(cols, bg=WHITE, bd=1, relief="solid")
+        lf.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        tk.Label(lf, text="Current Students", font=FBD, fg=DARK,
+                 bg=LIGHT, anchor="w", padx=10, pady=6).pack(fill="x")
+
+        if not students:
+            tk.Label(lf, text="No students admitted yet.", font=FB,
+                     fg=GRAY, bg=WHITE, pady=12).pack()
+        for s in students:
+            room = db.get_room(d, s.get("room_id"))
+            row = tk.Frame(lf, bg=WHITE)
+            row.pack(fill="x", padx=8, pady=3)
+            tk.Frame(lf, bg=BORDER, height=1).pack(fill="x")
+            tk.Label(row, text=s["name"], font=FBD, fg=DARK,
+                     bg=WHITE, anchor="w").pack(side="left")
+            tk.Label(row, text=f"Room {room['number'] if room else '—'}",
+                     font=FS, fg=GRAY, bg=WHITE).pack(side="right")
+
+        # Right: Recent complaints
+        rf = tk.Frame(cols, bg=WHITE, bd=1, relief="solid")
+        rf.grid(row=0, column=1, sticky="nsew")
+        tk.Label(rf, text="Recent Complaints", font=FBD, fg=DARK,
+                 bg=LIGHT, anchor="w", padx=10, pady=6).pack(fill="x")
+
+        if not comps:
+            tk.Label(rf, text="No complaints filed.", font=FB,
+                     fg=GRAY, bg=WHITE, pady=12).pack()
+        for c in comps[-5:]:
+            stu = db.get_student(d, c.get("student_id"))
+            row = tk.Frame(rf, bg=WHITE)
+            row.pack(fill="x", padx=8, pady=3)
+            tk.Frame(rf, bg=BORDER, height=1).pack(fill="x")
+            tk.Label(row, text=c["title"][:32], font=FB, fg=DARK,
+                     bg=WHITE, anchor="w").pack(side="left")
+            st_color = ORANGE if c["status"] == "Pending" else GREEN
+            tk.Label(row, text=c["status"], font=FS, fg=st_color,
+                     bg=WHITE).pack(side="right")
